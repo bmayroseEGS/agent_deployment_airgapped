@@ -32,13 +32,14 @@ Elastic Agent deployment requires:
 
 If you don't already have an air-gapped Elastic Stack deployment, you **must** use the `helm-fleet-deployment_airgapped` repository to set up your environment first.
 
-### Step 1: Navigate to the Base Infrastructure Repository
+### Step 1: Clone the Base Infrastructure Repository
 
 **IMPORTANT:** Complete this setup **before** deploying agents from this repository.
 
 ```bash
-# Navigate to the infrastructure repository
-cd /Users/bmelasticendgame/dev/helm_fleet_deplyment_airgapped/helm-fleet-deployment_airgapped
+# Clone the infrastructure repository
+git clone https://github.com/bmayroseEGS/helm-fleet-deployment-airgapped.git
+cd helm-fleet-deployment-airgapped
 ```
 
 ### Step 2: Collect Required Images (Internet-connected Machine)
@@ -663,8 +664,8 @@ curl http://localhost:5000/v2/_catalog
 ## Support
 
 For setup issues with the base infrastructure repository:
-- Visit: [helm-fleet-deployment_airgapped](../helm_fleet_deplyment_airgapped/helm-fleet-deployment_airgapped)
-- Check: [TROUBLESHOOTING.md](../helm_fleet_deplyment_airgapped/helm-fleet-deployment_airgapped/TROUBLESHOOTING.md)
+- Visit: [helm-fleet-deployment-airgapped](https://github.com/bmayroseEGS/helm-fleet-deployment-airgapped)
+- Check: [TROUBLESHOOTING.md](https://github.com/bmayroseEGS/helm-fleet-deployment-airgapped/blob/main/TROUBLESHOOTING.md)
 
 For Elasticsearch/Kibana/Fleet specific issues:
 - Elasticsearch Documentation: https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html

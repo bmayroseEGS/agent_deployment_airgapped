@@ -19,7 +19,7 @@ Before using this repository, you **must** have a functioning air-gapped Elastic
 
 ### Quick Prerequisites Summary
 
-- **Air-gapped Kubernetes cluster** (k3s or similar) - See [helm-fleet-deployment_airgapped](../helm_fleet_deplyment_airgapped/helm-fleet-deployment_airgapped)
+- **Air-gapped Kubernetes cluster** (k3s or similar) - See [helm-fleet-deployment-airgapped](https://github.com/bmayroseEGS/helm-fleet-deployment-airgapped)
 - **Elasticsearch and Kibana** deployed and accessible
 - **Fleet Server** deployed and configured (optional, for centralized management)
 - **Local container registry** at `localhost:5000` with Elastic Agent images loaded
@@ -57,7 +57,7 @@ agent_deployment_airgapped/
 
 ### Step 1: Verify Prerequisites
 
-Ensure you have completed the setup from [helm-fleet-deployment_airgapped](../helm_fleet_deplyment_airgapped/helm-fleet-deployment_airgapped):
+Ensure you have completed the setup from [helm-fleet-deployment-airgapped](https://github.com/bmayroseEGS/helm-fleet-deployment-airgapped):
 
 ```bash
 # Verify Elasticsearch is running
@@ -513,7 +513,7 @@ kubectl get all -n elastic -l app=elastic-agent
 
 For detailed setup and troubleshooting:
 - [PREREQUISITES.md](PREREQUISITES.md) - Environment setup requirements
-- [helm-fleet-deployment_airgapped](../helm_fleet_deplyment_airgapped/helm-fleet-deployment_airgapped) - Base infrastructure deployment
+- [helm-fleet-deployment-airgapped](https://github.com/bmayroseEGS/helm-fleet-deployment-airgapped) - Base infrastructure deployment
 - [Elastic Agent Documentation](https://www.elastic.co/guide/en/fleet/current/elastic-agent-installation.html)
 - [Elastic Integrations](https://www.elastic.co/integrations)
 
