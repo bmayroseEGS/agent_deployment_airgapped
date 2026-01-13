@@ -1,0 +1,16 @@
+apiVersion: v2
+name: elastic-agent
+description: Helm chart for deploying Elastic Agent in air-gapped environments
+type: application
+version: 1.0.0
+appVersion: "9.2.3"
+keywords:
+  - elastic
+  - agent
+  - monitoring
+  - observability
+  - air-gapped
+maintainers:
+  - name: Brian Mayrose
+sources:
+  - https://github.com/bmayroseEGS/agent_deployment_airgapped

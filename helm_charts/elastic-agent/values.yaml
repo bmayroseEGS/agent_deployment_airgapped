@@ -1,0 +1,171 @@
+# Default values for elastic-agent
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Agent image configuration
+image:
+  registry: localhost:5000
+  repository: elastic-agent/elastic-agent
+  tag: "9.2.3"
+  pullPolicy: IfNotPresent
+
+# Deployment mode: daemonset or deployment
+# daemonset: Deploys one agent per node (recommended for system/kubernetes metrics)
+# deployment: Deploys fixed number of replicas (recommended for centralized collection)
+deploymentMode: daemonset
+
+# Number of replicas (only used when deploymentMode is 'deployment')
+replicas: 1
+
+# ServiceAccount configuration
+serviceAccount:
+  create: true
+  name: elastic-agent
+  annotations: {}
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Elasticsearch connection settings
+elasticsearch:
+  host: "http://elasticsearch-master:9200"
+  username: "elastic"
+  password: "elastic"
+
+  # TLS/SSL configuration (optional)
+  ssl:
+    enabled: false
+    certificateAuthorities: ""
+    certificate: ""
+    key: ""
+    verificationMode: "full"
+
+# Fleet Server connection settings (optional)
+fleet:
+  enabled: false
+  url: "http://fleet-server:8220"
+  enrollmentToken: ""
+  insecure: true  # Set to true for air-gapped environments without TLS
+
+# Agent policy configuration
+agentPolicy:
+  name: "system-monitoring"
+  namespace: "default"
+
+  # Output configuration
+  outputs:
+    default:
+      type: "elasticsearch"
+
+  # Integration inputs
+  inputs:
+    # System integration
+    system:
+      enabled: true
+      # System metrics collection
+      metrics:
+        enabled: true
+        period: "10s"
+        metricsets:
+          - cpu
+          - load
+          - memory
+          - network
+          - filesystem
+          - fsstat
+          - process
+          - process_summary
+          - socket_summary
+        # Process filtering (optional)
+        process:
+          include_top_n:
+            by_cpu: 5
+            by_memory: 5
+
+      # System logs collection
+      logs:
+        enabled: true
+        streams:
+          - paths:
+              - /var/log/messages
+              - /var/log/syslog
+            exclude_files: ['.gz$']
+
+# Resource limits and requests
+resources:
+  requests:
+    cpu: "100m"
+    memory: "200Mi"
+  limits:
+    cpu: "500m"
+    memory: "500Mi"
+
+# Node selector for pod assignment
+nodeSelector: {}
+
+# Tolerations for pod assignment
+tolerations:
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/control-plane
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/master
+
+# Affinity rules
+affinity: {}
+
+# Security context for pods
+podSecurityContext:
+  runAsUser: 0
+  fsGroup: 0
+
+# Security context for containers
+securityContext:
+  privileged: false
+  runAsUser: 0
+  capabilities:
+    add:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+
+# Host paths to mount (for DaemonSet mode)
+hostPaths:
+  varLog:
+    enabled: true
+    path: /var/log
+  varLibDockerContainers:
+    enabled: true
+    path: /var/lib/docker/containers
+  etcHostname:
+    enabled: true
+    path: /etc/hostname
+  procPath:
+    enabled: true
+    path: /proc
+  sysPath:
+    enabled: true
+    path: /sys
+  etcPath:
+    enabled: true
+    path: /etc
+
+# Additional environment variables
+extraEnvs: []
+  # - name: EXAMPLE_VAR
+  #   value: "example-value"
+
+# Additional volumes
+extraVolumes: []
+
+# Additional volume mounts
+extraVolumeMounts: []
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}
+
+# Namespace to deploy to
+namespace: elastic

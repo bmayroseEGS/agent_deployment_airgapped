@@ -1,0 +1,130 @@
+# Example values file for System integration
+# This configuration deploys Elastic Agent as a DaemonSet to collect system metrics and logs
+
+# Agent image from local registry (air-gapped environment)
+image:
+  registry: localhost:5000
+  repository: elastic-agent/elastic-agent
+  tag: "9.2.3"
+  pullPolicy: IfNotPresent
+
+# Deploy as DaemonSet (one agent per node)
+deploymentMode: daemonset
+
+# Elasticsearch connection
+elasticsearch:
+  host: "http://elasticsearch-master:9200"
+  username: "elastic"
+  password: "elastic"
+  ssl:
+    enabled: false
+
+# Standalone mode (not using Fleet Server)
+fleet:
+  enabled: false
+
+# Agent policy for system monitoring
+agentPolicy:
+  name: "system-monitoring"
+  namespace: "default"
+
+  outputs:
+    default:
+      type: "elasticsearch"
+
+  inputs:
+    # System integration configuration
+    system:
+      enabled: true
+
+      # Collect system metrics every 10 seconds
+      metrics:
+        enabled: true
+        period: "10s"
+        metricsets:
+          - cpu              # CPU usage and stats
+          - load             # System load averages
+          - memory           # Memory usage
+          - network          # Network I/O
+          - filesystem       # Filesystem usage
+          - fsstat           # Filesystem statistics
+          - process          # Per-process metrics
+          - process_summary  # Process summary
+          - socket_summary   # Network socket summary
+
+        # Track top processes by CPU and memory
+        process:
+          include_top_n:
+            by_cpu: 5
+            by_memory: 5
+
+      # Collect system logs
+      logs:
+        enabled: true
+        streams:
+          - paths:
+              - /var/log/messages
+              - /var/log/syslog
+            exclude_files: ['.gz$']
+
+# Resource allocation
+resources:
+  requests:
+    cpu: "100m"
+    memory: "200Mi"
+  limits:
+    cpu: "500m"
+    memory: "500Mi"
+
+# Allow scheduling on all nodes including control plane
+tolerations:
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/control-plane
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/master
+
+# Security context - run as root to access system metrics
+podSecurityContext:
+  runAsUser: 0
+  fsGroup: 0
+
+securityContext:
+  privileged: false
+  runAsUser: 0
+  capabilities:
+    add:
+      - NET_ADMIN      # Required for network metrics
+      - SYS_ADMIN      # Required for system metrics
+      - DAC_READ_SEARCH  # Required for reading system files
+
+# Mount host paths for metrics collection
+hostPaths:
+  varLog:
+    enabled: true
+    path: /var/log
+  varLibDockerContainers:
+    enabled: true
+    path: /var/lib/docker/containers
+  etcHostname:
+    enabled: true
+    path: /etc/hostname
+  procPath:
+    enabled: true
+    path: /proc
+  sysPath:
+    enabled: true
+    path: /sys
+  etcPath:
+    enabled: true
+    path: /etc
+
+# ServiceAccount and RBAC
+serviceAccount:
+  create: true
+  name: elastic-agent
+
+rbac:
+  create: true
+
+# Deploy to elastic namespace
+namespace: elastic

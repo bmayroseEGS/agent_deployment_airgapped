@@ -1,0 +1,180 @@
+{{- if eq .Values.deploymentMode "daemonset" }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "elastic-agent.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elastic-agent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "elastic-agent.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "elastic-agent.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- end }}
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: elastic-agent
+        image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- with .Values.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        {{- if .Values.fleet.enabled }}
+        - name: FLEET_ENROLLMENT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "elastic-agent.fullname" . }}-secret
+              key: fleet-enrollment-token
+        - name: FLEET_URL
+          value: {{ .Values.fleet.url | quote }}
+        - name: FLEET_INSECURE
+          value: {{ .Values.fleet.insecure | quote }}
+        {{- end }}
+        - name: ELASTICSEARCH_HOST
+          value: {{ .Values.elasticsearch.host | quote }}
+        - name: ELASTICSEARCH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "elastic-agent.fullname" . }}-secret
+              key: elasticsearch-username
+        - name: ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "elastic-agent.fullname" . }}-secret
+              key: elasticsearch-password
+        {{- with .Values.extraEnvs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/elastic-agent/agent.yml
+          subPath: agent.yml
+          readOnly: true
+        {{- if .Values.hostPaths.varLog.enabled }}
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        {{- end }}
+        {{- if .Values.hostPaths.varLibDockerContainers.enabled }}
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        {{- end }}
+        {{- if .Values.hostPaths.etcHostname.enabled }}
+        - name: etc-hostname
+          mountPath: /etc/hostname
+          readOnly: true
+        {{- end }}
+        {{- if .Values.hostPaths.procPath.enabled }}
+        - name: proc
+          mountPath: /hostfs/proc
+          readOnly: true
+        {{- end }}
+        {{- if .Values.hostPaths.sysPath.enabled }}
+        - name: sys
+          mountPath: /hostfs/sys
+          readOnly: true
+        {{- end }}
+        {{- if .Values.hostPaths.etcPath.enabled }}
+        - name: etc
+          mountPath: /hostfs/etc
+          readOnly: true
+        {{- end }}
+        {{- with .Values.extraVolumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "elastic-agent.fullname" . }}-config
+          defaultMode: 0600
+      {{- if .Values.hostPaths.varLog.enabled }}
+      - name: varlog
+        hostPath:
+          path: {{ .Values.hostPaths.varLog.path }}
+      {{- end }}
+      {{- if .Values.hostPaths.varLibDockerContainers.enabled }}
+      - name: varlibdockercontainers
+        hostPath:
+          path: {{ .Values.hostPaths.varLibDockerContainers.path }}
+      {{- end }}
+      {{- if .Values.hostPaths.etcHostname.enabled }}
+      - name: etc-hostname
+        hostPath:
+          path: {{ .Values.hostPaths.etcHostname.path }}
+      {{- end }}
+      {{- if .Values.hostPaths.procPath.enabled }}
+      - name: proc
+        hostPath:
+          path: {{ .Values.hostPaths.procPath.path }}
+      {{- end }}
+      {{- if .Values.hostPaths.sysPath.enabled }}
+      - name: sys
+        hostPath:
+          path: {{ .Values.hostPaths.sysPath.path }}
+      {{- end }}
+      {{- if .Values.hostPaths.etcPath.enabled }}
+      - name: etc
+        hostPath:
+          path: {{ .Values.hostPaths.etcPath.path }}
+      {{- end }}
+      {{- with .Values.extraVolumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
