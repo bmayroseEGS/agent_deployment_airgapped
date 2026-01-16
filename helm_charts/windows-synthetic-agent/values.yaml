@@ -51,8 +51,8 @@ generator:
   # Generation mode: continuous or batch
   mode: continuous
 
-  # Events per second (for continuous mode)
-  eventsPerSecond: 5
+  # Events per minute (for continuous mode)
+  eventsPerMinute: 60
 
   # Batch size (for batch mode - generates this many then pauses)
   batchSize: 100

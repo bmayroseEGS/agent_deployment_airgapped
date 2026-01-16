@@ -111,9 +111,9 @@ echo -e "${BLUE}  Configuration${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Events per second
-read -p "Events per second [5]: " EVENTS_PER_SEC
-EVENTS_PER_SEC=${EVENTS_PER_SEC:-5}
+# Events per minute
+read -p "Events per minute [60]: " EVENTS_PER_MIN
+EVENTS_PER_MIN=${EVENTS_PER_MIN:-60}
 
 # Generation mode
 echo ""
@@ -179,7 +179,7 @@ echo ""
 
 HELM_FULL_CMD="helm ${HELM_CMD} windows-synthetic ${CHART_DIR} \
     -n ${NAMESPACE} \
-    --set generator.eventsPerSecond=${EVENTS_PER_SEC} \
+    --set generator.eventsPerMinute=${EVENTS_PER_MIN} \
     --set generator.mode=${GEN_MODE} \
     ${FLEET_ARGS} \
     ${VALUES_ARG}"

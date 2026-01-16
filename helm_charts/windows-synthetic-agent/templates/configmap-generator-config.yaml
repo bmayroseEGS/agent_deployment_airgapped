@@ -10,8 +10,8 @@ data:
     # Generator mode: continuous or batch
     mode: {{ .Values.generator.mode }}
 
-    # Events per second (continuous mode)
-    eventsPerSecond: {{ .Values.generator.eventsPerSecond }}
+    # Events per minute (continuous mode)
+    eventsPerMinute: {{ .Values.generator.eventsPerMinute }}
 
     # Batch settings
     batchSize: {{ .Values.generator.batchSize }}

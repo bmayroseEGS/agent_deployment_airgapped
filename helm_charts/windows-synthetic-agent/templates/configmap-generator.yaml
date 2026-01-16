@@ -711,7 +711,7 @@ data:
         generator = WindowsEventGenerator(config_path)
 
         mode = config.get('mode', 'continuous')
-        events_per_second = config.get('eventsPerSecond', 5)
+        events_per_minute = config.get('eventsPerMinute', 60)
         batch_size = config.get('batchSize', 100)
         batch_interval = config.get('batchIntervalSeconds', 60)
         max_size_mb = config.get('logFile', {}).get('maxSizeMB', 100)
@@ -721,8 +721,9 @@ data:
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         event_count = 0
+        sleep_interval = 60.0 / events_per_minute  # Convert to seconds between events
 
-        logger.info(f"Mode: {mode}, Events/sec: {events_per_second}")
+        logger.info(f"Mode: {mode}, Events/min: {events_per_minute} (every {sleep_interval:.1f}s)")
 
         while running:
             try:
@@ -736,10 +737,10 @@ data:
                         f.write(json.dumps(event) + '\n')
                     event_count += 1
 
-                    if event_count % 100 == 0:
+                    if event_count % 10 == 0:
                         logger.info(f"Generated {event_count} events")
 
-                    time.sleep(1.0 / events_per_second)
+                    time.sleep(sleep_interval)
 
                 else:  # batch mode
                     logger.info(f"Generating batch of {batch_size} events")
