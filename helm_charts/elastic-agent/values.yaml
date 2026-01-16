@@ -95,8 +95,8 @@ agentPolicy:
 # Resource limits and requests
 resources:
   requests:
-    cpu: "100m"
-    memory: "200Mi"
+    cpu: "1m"
+    memory: "150Mi"
   limits:
     cpu: "500m"
     memory: "500Mi"
