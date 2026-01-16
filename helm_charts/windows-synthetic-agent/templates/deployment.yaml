@@ -34,7 +34,7 @@ spec:
       - name: windows-event-generator
         image: "{{ .Values.generatorImage.registry }}/{{ .Values.generatorImage.repository }}:{{ .Values.generatorImage.tag }}"
         imagePullPolicy: {{ .Values.generatorImage.pullPolicy }}
-        command: ["sh", "-c", "pip install pyyaml --quiet && python /scripts/generate_windows_events.py"]
+        command: ["sh", "-c", "pip install --user pyyaml --quiet && python /scripts/generate_windows_events.py"]
         env:
         - name: GENERATOR_CONFIG_PATH
           value: "/config/generator-config.yaml"

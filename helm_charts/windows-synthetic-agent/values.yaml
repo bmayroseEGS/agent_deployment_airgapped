@@ -113,8 +113,8 @@ resources:
 
 # Pod configuration
 podSecurityContext:
-  runAsUser: 1000
-  fsGroup: 1000
+  runAsUser: 0
+  fsGroup: 0
 
 # Node placement
 nodeSelector: {}
