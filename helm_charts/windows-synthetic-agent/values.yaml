@@ -161,14 +161,14 @@ sharedVolume:
 resources:
   agent:
     requests:
-      cpu: "50m"
-      memory: "150Mi"
+      cpu: "1m"
+      memory: "100Mi"
     limits:
       cpu: "300m"
       memory: "400Mi"
   generator:
     requests:
-      cpu: "10m"
+      cpu: "1m"
       memory: "32Mi"
     limits:
       cpu: "100m"
