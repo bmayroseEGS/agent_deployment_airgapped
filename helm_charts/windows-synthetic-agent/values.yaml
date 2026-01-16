@@ -1,0 +1,192 @@
+# Windows Synthetic Agent Configuration
+# Generates fake Windows event logs and ships them to Elasticsearch
+
+# Elastic Agent image
+agentImage:
+  registry: localhost:5000
+  repository: elastic-agent/elastic-agent
+  tag: "9.2.3"
+  pullPolicy: IfNotPresent
+
+# Generator sidecar image (python:3.11-slim pre-loaded to local registry)
+generatorImage:
+  registry: localhost:5000
+  repository: library/python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+# ServiceAccount configuration
+serviceAccount:
+  create: true
+  name: windows-synthetic-agent
+  annotations: {}
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Namespace
+namespace: elastic
+
+# Elasticsearch connection
+elasticsearch:
+  host: "http://elasticsearch-master:9200"
+  username: "elastic"
+  password: "elastic"
+  ssl:
+    enabled: false
+    verificationMode: "none"
+
+# Fleet Server connection (optional - set enabled: true to use Fleet)
+fleet:
+  enabled: false
+  url: "http://fleet-server:8220"
+  enrollmentToken: ""
+  insecure: true
+
+# ===========================================
+# Event Generator Configuration
+# ===========================================
+generator:
+  # Generation mode: continuous or batch
+  mode: continuous
+
+  # Events per second (for continuous mode)
+  eventsPerSecond: 5
+
+  # Batch size (for batch mode - generates this many then pauses)
+  batchSize: 100
+  batchIntervalSeconds: 60
+
+  # Log file configuration
+  logFile:
+    path: /var/log/windows-synthetic
+    name: windows-events.ndjson
+    maxSizeMB: 100
+    rotateCount: 5
+
+  # Event type weights (higher = more frequent)
+  eventWeights:
+    security:
+      logonSuccess: 50       # Event 4624
+      logonFailure: 20       # Event 4625
+      processCreation: 40    # Event 4688
+      processTermination: 30 # Event 4689
+      privilegeAssigned: 10  # Event 4672
+      userCreated: 2         # Event 4720
+      userDeleted: 1         # Event 4726
+    system:
+      information: 15        # Event 1
+      serviceStarted: 5      # Event 6005
+      serviceStopped: 5      # Event 6006
+    application:
+      error: 8               # Event 1000
+      hang: 3                # Event 1001
+      crash: 2               # Event 1002
+
+  # Synthetic data configuration
+  syntheticData:
+    # Computer names to use
+    computerNames:
+      - "WIN-SYNTHETIC-001"
+      - "WIN-SYNTHETIC-002"
+      - "WIN-SYNTHETIC-003"
+      - "WIN-SERVER-DC01"
+      - "WIN-WORKSTATION-01"
+
+    # User accounts for logon events
+    users:
+      - name: "john.doe"
+        domain: "SYNTHETIC"
+        sid: "S-1-5-21-3623811015-3361044348-30300820-1013"
+      - name: "jane.smith"
+        domain: "SYNTHETIC"
+        sid: "S-1-5-21-3623811015-3361044348-30300820-1014"
+      - name: "admin"
+        domain: "SYNTHETIC"
+        sid: "S-1-5-21-3623811015-3361044348-30300820-500"
+      - name: "svc_backup"
+        domain: "SYNTHETIC"
+        sid: "S-1-5-21-3623811015-3361044348-30300820-1100"
+
+    # Source IP addresses for network logons
+    sourceIPs:
+      - "192.168.1.100"
+      - "192.168.1.101"
+      - "192.168.1.102"
+      - "10.0.0.50"
+      - "10.0.0.51"
+
+    # Processes for 4688 events
+    processes:
+      - path: "C:\\Windows\\System32\\cmd.exe"
+        name: "cmd.exe"
+      - path: "C:\\Windows\\System32\\powershell.exe"
+        name: "powershell.exe"
+      - path: "C:\\Windows\\System32\\notepad.exe"
+        name: "notepad.exe"
+      - path: "C:\\Windows\\explorer.exe"
+        name: "explorer.exe"
+      - path: "C:\\Program Files\\MyApp\\app.exe"
+        name: "app.exe"
+
+# ===========================================
+# Agent Input Configuration (Standalone mode)
+# ===========================================
+agentConfig:
+  # Data stream settings
+  dataStream:
+    type: logs
+    dataset: windows.synthetic
+    namespace: default
+
+  # Filestream input configuration
+  filestream:
+    id: windows-synthetic-logs
+    paths:
+      - "/var/log/windows-synthetic/*.ndjson"
+    prospector:
+      scanner:
+        check_interval: 1s
+
+# ===========================================
+# Shared Volume Configuration
+# ===========================================
+sharedVolume:
+  sizeLimit: 500Mi
+
+# ===========================================
+# Resource Configuration
+# ===========================================
+resources:
+  agent:
+    requests:
+      cpu: "100m"
+      memory: "200Mi"
+    limits:
+      cpu: "500m"
+      memory: "500Mi"
+  generator:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+# Pod configuration
+podSecurityContext:
+  runAsUser: 0
+  fsGroup: 0
+
+securityContext:
+  runAsUser: 0
+
+# Node placement
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod metadata
+podAnnotations: {}
+podLabels: {}

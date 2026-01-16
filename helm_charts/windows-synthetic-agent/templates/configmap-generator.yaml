@@ -1,0 +1,770 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "windows-synthetic-agent.fullname" . }}-generator-script
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "windows-synthetic-agent.labels" . | nindent 4 }}
+data:
+  generate_windows_events.py: |
+    #!/usr/bin/env python3
+    """
+    Windows Event Log Synthetic Data Generator
+
+    Generates fake Windows event logs in NDJSON format compatible with
+    Elastic's winlog field mappings and ECS schema.
+    """
+
+    import json
+    import os
+    import random
+    import time
+    import uuid
+    import yaml
+    from datetime import datetime, timezone
+    from pathlib import Path
+    import logging
+    import signal
+    import sys
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+
+    # Global flag for graceful shutdown
+    running = True
+
+
+    def signal_handler(signum, frame):
+        global running
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        running = False
+
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+
+    class WindowsEventGenerator:
+        """Generates synthetic Windows event log entries."""
+
+        LOGON_TYPES = {
+            2: "Interactive",
+            3: "Network",
+            4: "Batch",
+            5: "Service",
+            7: "Unlock",
+            8: "NetworkCleartext",
+            9: "NewCredentials",
+            10: "RemoteInteractive",
+            11: "CachedInteractive"
+        }
+
+        FAILURE_REASONS = {
+            "0xC0000064": "User name does not exist",
+            "0xC000006A": "Incorrect password",
+            "0xC000006D": "Bad username or authentication info",
+            "0xC000006E": "Account restriction",
+            "0xC000006F": "Outside authorized hours",
+            "0xC0000070": "Unauthorized workstation",
+            "0xC0000071": "Expired password",
+            "0xC0000072": "Disabled account",
+            "0xC000015B": "Logon type not granted",
+            "0xC0000192": "Account expired",
+            "0xC0000193": "Account locked out"
+        }
+
+        def __init__(self, config_path: str):
+            self.config = self._load_config(config_path)
+            self.record_id = random.randint(1000000, 9999999)
+            self._build_weighted_events()
+
+        def _load_config(self, config_path: str) -> dict:
+            """Load configuration from YAML file."""
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f)
+
+        def _build_weighted_events(self):
+            """Build weighted list of event types for random selection."""
+            self.weighted_events = []
+            weights = self.config.get('eventWeights', {})
+
+            # Security events
+            security = weights.get('security', {})
+            self.weighted_events.extend([('4624', 'Security')] * security.get('logonSuccess', 50))
+            self.weighted_events.extend([('4625', 'Security')] * security.get('logonFailure', 20))
+            self.weighted_events.extend([('4688', 'Security')] * security.get('processCreation', 40))
+            self.weighted_events.extend([('4689', 'Security')] * security.get('processTermination', 30))
+            self.weighted_events.extend([('4672', 'Security')] * security.get('privilegeAssigned', 10))
+            self.weighted_events.extend([('4720', 'Security')] * security.get('userCreated', 2))
+            self.weighted_events.extend([('4726', 'Security')] * security.get('userDeleted', 1))
+
+            # System events
+            system = weights.get('system', {})
+            self.weighted_events.extend([('1', 'System')] * system.get('information', 15))
+            self.weighted_events.extend([('6005', 'System')] * system.get('serviceStarted', 5))
+            self.weighted_events.extend([('6006', 'System')] * system.get('serviceStopped', 5))
+
+            # Application events
+            application = weights.get('application', {})
+            self.weighted_events.extend([('1000', 'Application')] * application.get('error', 8))
+            self.weighted_events.extend([('1001', 'Application')] * application.get('hang', 3))
+            self.weighted_events.extend([('1002', 'Application')] * application.get('crash', 2))
+
+        def _get_timestamp(self) -> str:
+            """Get current timestamp in ISO format."""
+            return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+
+        def _get_random_user(self) -> dict:
+            """Get a random user from config."""
+            users = self.config.get('syntheticData', {}).get('users', [])
+            if users:
+                return random.choice(users)
+            return {"name": "user", "domain": "DOMAIN", "sid": "S-1-5-21-0-0-0-1000"}
+
+        def _get_random_computer(self) -> str:
+            """Get a random computer name from config."""
+            computers = self.config.get('syntheticData', {}).get('computerNames', [])
+            if computers:
+                return random.choice(computers)
+            return "WIN-SYNTHETIC-001"
+
+        def _get_random_ip(self) -> str:
+            """Get a random source IP from config."""
+            ips = self.config.get('syntheticData', {}).get('sourceIPs', [])
+            if ips:
+                return random.choice(ips)
+            return f"192.168.1.{random.randint(1, 254)}"
+
+        def _get_random_process(self) -> dict:
+            """Get a random process from config."""
+            processes = self.config.get('syntheticData', {}).get('processes', [])
+            if processes:
+                return random.choice(processes)
+            return {"path": "C:\\Windows\\System32\\cmd.exe", "name": "cmd.exe"}
+
+        def _next_record_id(self) -> int:
+            """Get next sequential record ID."""
+            self.record_id += 1
+            return self.record_id
+
+        def _base_event(self, event_id: str, channel: str) -> dict:
+            """Create base event structure."""
+            computer = self._get_random_computer()
+
+            return {
+                "@timestamp": self._get_timestamp(),
+                "ecs": {"version": "8.11.0"},
+                "agent": {
+                    "type": "winlogbeat",
+                    "version": "9.2.3"
+                },
+                "host": {
+                    "name": computer,
+                    "hostname": computer
+                },
+                "winlog": {
+                    "event_id": int(event_id),
+                    "channel": channel,
+                    "record_id": self._next_record_id(),
+                    "computer_name": computer,
+                    "process": {
+                        "pid": random.randint(4, 65535),
+                        "thread": {"id": random.randint(4, 65535)}
+                    }
+                }
+            }
+
+        def generate_4624(self) -> dict:
+            """Generate Event 4624 - Successful Logon."""
+            event = self._base_event("4624", "Security")
+            user = self._get_random_user()
+            logon_type = random.choice(list(self.LOGON_TYPES.keys()))
+            source_ip = self._get_random_ip()
+            source_port = random.randint(49152, 65535)
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["authentication"],
+                    "type": ["start"],
+                    "action": "logged-in",
+                    "outcome": "success",
+                    "code": "4624"
+                },
+                "user": {
+                    "name": user["name"],
+                    "domain": user["domain"],
+                    "id": user["sid"]
+                },
+                "source": {
+                    "ip": source_ip,
+                    "port": source_port
+                },
+                "log": {"level": "information"}
+            })
+
+            event["winlog"].update({
+                "provider_name": "Microsoft-Windows-Security-Auditing",
+                "task": "Logon",
+                "opcode": "Info",
+                "event_data": {
+                    "SubjectUserSid": "S-1-5-18",
+                    "SubjectUserName": "SYSTEM",
+                    "SubjectDomainName": "NT AUTHORITY",
+                    "SubjectLogonId": "0x3e7",
+                    "TargetUserSid": user["sid"],
+                    "TargetUserName": user["name"],
+                    "TargetDomainName": user["domain"],
+                    "TargetLogonId": hex(random.randint(0x10000, 0xffffff)),
+                    "LogonType": str(logon_type),
+                    "LogonProcessName": "User32",
+                    "AuthenticationPackageName": "Negotiate",
+                    "WorkstationName": event["host"]["name"],
+                    "LogonGuid": "{" + str(uuid.uuid4()).upper() + "}",
+                    "TransmittedServices": "-",
+                    "LmPackageName": "-",
+                    "KeyLength": "0",
+                    "ProcessId": hex(random.randint(0x100, 0xffff)),
+                    "ProcessName": "C:\\Windows\\System32\\svchost.exe",
+                    "IpAddress": source_ip,
+                    "IpPort": str(source_port)
+                }
+            })
+
+            return event
+
+        def generate_4625(self) -> dict:
+            """Generate Event 4625 - Failed Logon."""
+            event = self._base_event("4625", "Security")
+            user = self._get_random_user()
+            logon_type = random.choice(list(self.LOGON_TYPES.keys()))
+            source_ip = self._get_random_ip()
+            failure_status = random.choice(list(self.FAILURE_REASONS.keys()))
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["authentication"],
+                    "type": ["start"],
+                    "action": "logon-failed",
+                    "outcome": "failure",
+                    "code": "4625"
+                },
+                "user": {
+                    "name": user["name"],
+                    "domain": user["domain"]
+                },
+                "source": {
+                    "ip": source_ip,
+                    "port": random.randint(49152, 65535)
+                },
+                "log": {"level": "information"}
+            })
+
+            event["winlog"].update({
+                "provider_name": "Microsoft-Windows-Security-Auditing",
+                "task": "Logon",
+                "opcode": "Info",
+                "event_data": {
+                    "SubjectUserSid": "S-1-0-0",
+                    "SubjectUserName": "-",
+                    "SubjectDomainName": "-",
+                    "SubjectLogonId": "0x0",
+                    "TargetUserName": user["name"],
+                    "TargetDomainName": user["domain"],
+                    "Status": failure_status,
+                    "FailureReason": self.FAILURE_REASONS[failure_status],
+                    "SubStatus": "0x0",
+                    "LogonType": str(logon_type),
+                    "LogonProcessName": "NtLmSsp",
+                    "AuthenticationPackageName": "NTLM",
+                    "WorkstationName": event["host"]["name"],
+                    "TransmittedServices": "-",
+                    "LmPackageName": "-",
+                    "KeyLength": "0",
+                    "ProcessId": hex(random.randint(0x100, 0xffff)),
+                    "ProcessName": "-",
+                    "IpAddress": source_ip,
+                    "IpPort": str(random.randint(49152, 65535))
+                }
+            })
+
+            return event
+
+        def generate_4688(self) -> dict:
+            """Generate Event 4688 - Process Creation."""
+            event = self._base_event("4688", "Security")
+            user = self._get_random_user()
+            process = self._get_random_process()
+            parent_process = self._get_random_process()
+            new_process_id = random.randint(1000, 65535)
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["process"],
+                    "type": ["start"],
+                    "action": "created-process",
+                    "outcome": "success",
+                    "code": "4688"
+                },
+                "user": {
+                    "name": user["name"],
+                    "domain": user["domain"],
+                    "id": user["sid"]
+                },
+                "process": {
+                    "pid": new_process_id,
+                    "name": process["name"],
+                    "executable": process["path"],
+                    "command_line": process["path"],
+                    "parent": {
+                        "pid": random.randint(1000, 65535),
+                        "name": parent_process["name"],
+                        "executable": parent_process["path"]
+                    }
+                },
+                "log": {"level": "information"}
+            })
+
+            event["winlog"].update({
+                "provider_name": "Microsoft-Windows-Security-Auditing",
+                "task": "Process Creation",
+                "opcode": "Info",
+                "event_data": {
+                    "SubjectUserSid": user["sid"],
+                    "SubjectUserName": user["name"],
+                    "SubjectDomainName": user["domain"],
+                    "SubjectLogonId": hex(random.randint(0x10000, 0xffffff)),
+                    "NewProcessId": hex(new_process_id),
+                    "NewProcessName": process["path"],
+                    "TokenElevationType": "%%1938",
+                    "ProcessId": hex(event["process"]["parent"]["pid"]),
+                    "CommandLine": process["path"],
+                    "TargetUserSid": user["sid"],
+                    "TargetUserName": user["name"],
+                    "TargetDomainName": user["domain"],
+                    "TargetLogonId": hex(random.randint(0x10000, 0xffffff)),
+                    "ParentProcessName": parent_process["path"],
+                    "MandatoryLabel": "S-1-16-8192"
+                }
+            })
+
+            return event
+
+        def generate_4689(self) -> dict:
+            """Generate Event 4689 - Process Termination."""
+            event = self._base_event("4689", "Security")
+            user = self._get_random_user()
+            process = self._get_random_process()
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["process"],
+                    "type": ["end"],
+                    "action": "terminated-process",
+                    "outcome": "success",
+                    "code": "4689"
+                },
+                "user": {
+                    "name": user["name"],
+                    "domain": user["domain"],
+                    "id": user["sid"]
+                },
+                "process": {
+                    "pid": random.randint(1000, 65535),
+                    "name": process["name"],
+                    "executable": process["path"],
+                    "exit_code": 0
+                },
+                "log": {"level": "information"}
+            })
+
+            event["winlog"].update({
+                "provider_name": "Microsoft-Windows-Security-Auditing",
+                "task": "Process Termination",
+                "opcode": "Info",
+                "event_data": {
+                    "SubjectUserSid": user["sid"],
+                    "SubjectUserName": user["name"],
+                    "SubjectDomainName": user["domain"],
+                    "SubjectLogonId": hex(random.randint(0x10000, 0xffffff)),
+                    "Status": "0x0",
+                    "ProcessId": hex(event["process"]["pid"]),
+                    "ProcessName": process["path"]
+                }
+            })
+
+            return event
+
+        def generate_4672(self) -> dict:
+            """Generate Event 4672 - Special Privileges Assigned."""
+            event = self._base_event("4672", "Security")
+            user = self._get_random_user()
+
+            privileges = [
+                "SeSecurityPrivilege",
+                "SeBackupPrivilege",
+                "SeRestorePrivilege",
+                "SeTakeOwnershipPrivilege",
+                "SeDebugPrivilege",
+                "SeSystemEnvironmentPrivilege",
+                "SeLoadDriverPrivilege",
+                "SeImpersonatePrivilege"
+            ]
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["iam"],
+                    "type": ["admin"],
+                    "action": "assigned-special-privileges",
+                    "outcome": "success",
+                    "code": "4672"
+                },
+                "user": {
+                    "name": user["name"],
+                    "domain": user["domain"],
+                    "id": user["sid"]
+                },
+                "log": {"level": "information"}
+            })
+
+            event["winlog"].update({
+                "provider_name": "Microsoft-Windows-Security-Auditing",
+                "task": "Special Logon",
+                "opcode": "Info",
+                "event_data": {
+                    "SubjectUserSid": user["sid"],
+                    "SubjectUserName": user["name"],
+                    "SubjectDomainName": user["domain"],
+                    "SubjectLogonId": hex(random.randint(0x10000, 0xffffff)),
+                    "PrivilegeList": "\n\t\t\t".join(random.sample(privileges, k=random.randint(2, 5)))
+                }
+            })
+
+            return event
+
+        def generate_4720(self) -> dict:
+            """Generate Event 4720 - User Account Created."""
+            event = self._base_event("4720", "Security")
+            user = self._get_random_user()
+            new_user = {
+                "name": f"newuser{random.randint(100, 999)}",
+                "domain": "SYNTHETIC",
+                "sid": f"S-1-5-21-3623811015-3361044348-30300820-{random.randint(2000, 9999)}"
+            }
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["iam"],
+                    "type": ["user", "creation"],
+                    "action": "created-user-account",
+                    "outcome": "success",
+                    "code": "4720"
+                },
+                "user": {
+                    "name": user["name"],
+                    "domain": user["domain"],
+                    "id": user["sid"],
+                    "target": {
+                        "name": new_user["name"],
+                        "domain": new_user["domain"],
+                        "id": new_user["sid"]
+                    }
+                },
+                "log": {"level": "information"}
+            })
+
+            event["winlog"].update({
+                "provider_name": "Microsoft-Windows-Security-Auditing",
+                "task": "User Account Management",
+                "opcode": "Info",
+                "event_data": {
+                    "SubjectUserSid": user["sid"],
+                    "SubjectUserName": user["name"],
+                    "SubjectDomainName": user["domain"],
+                    "SubjectLogonId": hex(random.randint(0x10000, 0xffffff)),
+                    "TargetUserSid": new_user["sid"],
+                    "TargetUserName": new_user["name"],
+                    "TargetDomainName": new_user["domain"],
+                    "PrivilegeList": "-",
+                    "SamAccountName": new_user["name"],
+                    "DisplayName": new_user["name"],
+                    "UserPrincipalName": f"{new_user['name']}@{new_user['domain'].lower()}.local",
+                    "HomeDirectory": "-",
+                    "HomePath": "-",
+                    "ScriptPath": "-",
+                    "ProfilePath": "-",
+                    "UserWorkstations": "-",
+                    "PasswordLastSet": "-",
+                    "AccountExpires": "%%1794",
+                    "PrimaryGroupId": "513",
+                    "AllowedToDelegateTo": "-",
+                    "OldUacValue": "0x0",
+                    "NewUacValue": "0x15",
+                    "UserAccountControl": "%%2080 %%2082",
+                    "UserParameters": "-",
+                    "SidHistory": "-",
+                    "LogonHours": "%%1793"
+                }
+            })
+
+            return event
+
+        def generate_4726(self) -> dict:
+            """Generate Event 4726 - User Account Deleted."""
+            event = self._base_event("4726", "Security")
+            user = self._get_random_user()
+            deleted_user = {
+                "name": f"deleteduser{random.randint(100, 999)}",
+                "domain": "SYNTHETIC",
+                "sid": f"S-1-5-21-3623811015-3361044348-30300820-{random.randint(2000, 9999)}"
+            }
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["iam"],
+                    "type": ["user", "deletion"],
+                    "action": "deleted-user-account",
+                    "outcome": "success",
+                    "code": "4726"
+                },
+                "user": {
+                    "name": user["name"],
+                    "domain": user["domain"],
+                    "id": user["sid"],
+                    "target": {
+                        "name": deleted_user["name"],
+                        "domain": deleted_user["domain"],
+                        "id": deleted_user["sid"]
+                    }
+                },
+                "log": {"level": "information"}
+            })
+
+            event["winlog"].update({
+                "provider_name": "Microsoft-Windows-Security-Auditing",
+                "task": "User Account Management",
+                "opcode": "Info",
+                "event_data": {
+                    "SubjectUserSid": user["sid"],
+                    "SubjectUserName": user["name"],
+                    "SubjectDomainName": user["domain"],
+                    "SubjectLogonId": hex(random.randint(0x10000, 0xffffff)),
+                    "TargetUserSid": deleted_user["sid"],
+                    "TargetUserName": deleted_user["name"],
+                    "TargetDomainName": deleted_user["domain"],
+                    "PrivilegeList": "-"
+                }
+            })
+
+            return event
+
+        def generate_system_event(self, event_id: str) -> dict:
+            """Generate System channel events."""
+            event = self._base_event(event_id, "System")
+
+            messages = {
+                "1": "The system has resumed from sleep.",
+                "6005": "The Event log service was started.",
+                "6006": "The Event log service was stopped."
+            }
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["host"],
+                    "type": ["info"],
+                    "action": "system-event",
+                    "code": event_id
+                },
+                "message": messages.get(event_id, "System event occurred."),
+                "log": {"level": "information"}
+            })
+
+            event["winlog"].update({
+                "provider_name": "EventLog",
+                "task": "None",
+                "opcode": "Info"
+            })
+
+            return event
+
+        def generate_application_event(self, event_id: str) -> dict:
+            """Generate Application channel events."""
+            event = self._base_event(event_id, "Application")
+            process = self._get_random_process()
+
+            messages = {
+                "1000": f"Faulting application name: {process['name']}, Faulting module name: ntdll.dll",
+                "1001": f"Application hang detected: {process['name']}",
+                "1002": f"Application crash: {process['name']} stopped working"
+            }
+
+            levels = {
+                "1000": "error",
+                "1001": "warning",
+                "1002": "error"
+            }
+
+            event.update({
+                "event": {
+                    "kind": "event",
+                    "category": ["process"],
+                    "type": ["error"] if event_id != "1001" else ["info"],
+                    "action": "application-error",
+                    "code": event_id
+                },
+                "message": messages.get(event_id, "Application event occurred."),
+                "log": {"level": levels.get(event_id, "error")}
+            })
+
+            event["winlog"].update({
+                "provider_name": "Application Error",
+                "task": "None",
+                "opcode": "Info",
+                "event_data": {
+                    "ApplicationName": process["name"],
+                    "ApplicationPath": process["path"],
+                    "ModuleName": "ntdll.dll",
+                    "ExceptionCode": hex(random.randint(0xc0000000, 0xc000ffff))
+                }
+            })
+
+            return event
+
+        def generate_event(self) -> dict:
+            """Generate a random event based on configured weights."""
+            event_id, channel = random.choice(self.weighted_events)
+
+            generators = {
+                ("4624", "Security"): self.generate_4624,
+                ("4625", "Security"): self.generate_4625,
+                ("4688", "Security"): self.generate_4688,
+                ("4689", "Security"): self.generate_4689,
+                ("4672", "Security"): self.generate_4672,
+                ("4720", "Security"): self.generate_4720,
+                ("4726", "Security"): self.generate_4726,
+                ("1", "System"): lambda: self.generate_system_event("1"),
+                ("6005", "System"): lambda: self.generate_system_event("6005"),
+                ("6006", "System"): lambda: self.generate_system_event("6006"),
+                ("1000", "Application"): lambda: self.generate_application_event("1000"),
+                ("1001", "Application"): lambda: self.generate_application_event("1001"),
+                ("1002", "Application"): lambda: self.generate_application_event("1002"),
+            }
+
+            generator = generators.get((event_id, channel))
+            if generator:
+                return generator()
+            return self._base_event(event_id, channel)
+
+
+    def rotate_log_file(log_path: Path, max_size_mb: int, rotate_count: int):
+        """Rotate log file if it exceeds max size."""
+        if not log_path.exists():
+            return
+
+        size_mb = log_path.stat().st_size / (1024 * 1024)
+        if size_mb < max_size_mb:
+            return
+
+        logger.info(f"Rotating log file (size: {size_mb:.2f} MB)")
+
+        # Remove oldest rotation
+        oldest = log_path.with_suffix(f".{rotate_count}")
+        if oldest.exists():
+            oldest.unlink()
+
+        # Rotate existing files
+        for i in range(rotate_count - 1, 0, -1):
+            src = log_path.with_suffix(f".{i}")
+            dst = log_path.with_suffix(f".{i + 1}")
+            if src.exists():
+                src.rename(dst)
+
+        # Move current to .1
+        log_path.rename(log_path.with_suffix(".1"))
+
+
+    def main():
+        global running
+
+        config_path = os.environ.get('GENERATOR_CONFIG_PATH', '/config/generator-config.yaml')
+        output_path = os.environ.get('LOG_OUTPUT_PATH', '/var/log/windows-synthetic/windows-events.ndjson')
+
+        logger.info("Starting Windows Event Generator")
+        logger.info(f"Config path: {config_path}")
+        logger.info(f"Output path: {output_path}")
+
+        # Load config for generator settings
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+
+        generator = WindowsEventGenerator(config_path)
+
+        mode = config.get('mode', 'continuous')
+        events_per_second = config.get('eventsPerSecond', 5)
+        batch_size = config.get('batchSize', 100)
+        batch_interval = config.get('batchIntervalSeconds', 60)
+        max_size_mb = config.get('logFile', {}).get('maxSizeMB', 100)
+        rotate_count = config.get('logFile', {}).get('rotateCount', 5)
+
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        event_count = 0
+
+        logger.info(f"Mode: {mode}, Events/sec: {events_per_second}")
+
+        while running:
+            try:
+                # Check for log rotation
+                rotate_log_file(output_file, max_size_mb, rotate_count)
+
+                if mode == 'continuous':
+                    # Generate events at configured rate
+                    event = generator.generate_event()
+                    with open(output_file, 'a') as f:
+                        f.write(json.dumps(event) + '\n')
+                    event_count += 1
+
+                    if event_count % 100 == 0:
+                        logger.info(f"Generated {event_count} events")
+
+                    time.sleep(1.0 / events_per_second)
+
+                else:  # batch mode
+                    logger.info(f"Generating batch of {batch_size} events")
+                    with open(output_file, 'a') as f:
+                        for _ in range(batch_size):
+                            if not running:
+                                break
+                            event = generator.generate_event()
+                            f.write(json.dumps(event) + '\n')
+                            event_count += 1
+
+                    logger.info(f"Batch complete. Total events: {event_count}. Sleeping for {batch_interval}s")
+
+                    # Sleep in small increments to allow graceful shutdown
+                    for _ in range(batch_interval):
+                        if not running:
+                            break
+                        time.sleep(1)
+
+            except Exception as e:
+                logger.error(f"Error generating event: {e}")
+                time.sleep(1)
+
+        logger.info(f"Generator stopped. Total events generated: {event_count}")
+
+
+    if __name__ == "__main__":
+        main()

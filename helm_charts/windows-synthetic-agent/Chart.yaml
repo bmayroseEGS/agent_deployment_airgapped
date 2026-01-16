@@ -1,0 +1,13 @@
+apiVersion: v2
+name: windows-synthetic-agent
+description: Helm chart for generating synthetic Windows event logs with Elastic Agent
+type: application
+version: 1.0.0
+appVersion: "9.2.3"
+keywords:
+  - elastic
+  - agent
+  - windows
+  - synthetic
+  - security
+  - air-gapped

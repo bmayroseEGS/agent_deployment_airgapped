@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "windows-synthetic-agent.fullname" . }}-generator-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "windows-synthetic-agent.labels" . | nindent 4 }}
+data:
+  generator-config.yaml: |
+    # Generator mode: continuous or batch
+    mode: {{ .Values.generator.mode }}
+
+    # Events per second (continuous mode)
+    eventsPerSecond: {{ .Values.generator.eventsPerSecond }}
+
+    # Batch settings
+    batchSize: {{ .Values.generator.batchSize }}
+    batchIntervalSeconds: {{ .Values.generator.batchIntervalSeconds }}
+
+    # Log file settings
+    logFile:
+      maxSizeMB: {{ .Values.generator.logFile.maxSizeMB }}
+      rotateCount: {{ .Values.generator.logFile.rotateCount }}
+
+    # Event type weights
+    eventWeights:
+      {{- toYaml .Values.generator.eventWeights | nindent 6 }}
+
+    # Synthetic data configuration
+    syntheticData:
+      {{- toYaml .Values.generator.syntheticData | nindent 6 }}

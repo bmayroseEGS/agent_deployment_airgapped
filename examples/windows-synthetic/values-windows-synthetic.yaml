@@ -1,0 +1,110 @@
+# Example values for Windows Synthetic Agent
+# High-volume security event simulation
+
+generator:
+  # Generate 10 events per second
+  eventsPerSecond: 10
+
+  # Focus more on security events
+  eventWeights:
+    security:
+      logonSuccess: 80       # More successful logins
+      logonFailure: 40       # More failed logins (security focus)
+      processCreation: 60    # More process events
+      processTermination: 40
+      privilegeAssigned: 20  # More privilege events
+      userCreated: 5
+      userDeleted: 3
+    system:
+      information: 10
+      serviceStarted: 3
+      serviceStopped: 3
+    application:
+      error: 5
+      hang: 2
+      crash: 1
+
+  # More diverse synthetic data
+  syntheticData:
+    computerNames:
+      - "WIN-DC01"
+      - "WIN-DC02"
+      - "WIN-WEB01"
+      - "WIN-WEB02"
+      - "WIN-DB01"
+      - "WIN-APP01"
+      - "WIN-FILE01"
+      - "WIN-WORKSTATION-001"
+      - "WIN-WORKSTATION-002"
+      - "WIN-WORKSTATION-003"
+
+    users:
+      - name: "administrator"
+        domain: "CORP"
+        sid: "S-1-5-21-1234567890-1234567890-1234567890-500"
+      - name: "john.doe"
+        domain: "CORP"
+        sid: "S-1-5-21-1234567890-1234567890-1234567890-1001"
+      - name: "jane.smith"
+        domain: "CORP"
+        sid: "S-1-5-21-1234567890-1234567890-1234567890-1002"
+      - name: "bob.wilson"
+        domain: "CORP"
+        sid: "S-1-5-21-1234567890-1234567890-1234567890-1003"
+      - name: "svc_backup"
+        domain: "CORP"
+        sid: "S-1-5-21-1234567890-1234567890-1234567890-2001"
+      - name: "svc_sql"
+        domain: "CORP"
+        sid: "S-1-5-21-1234567890-1234567890-1234567890-2002"
+      - name: "svc_web"
+        domain: "CORP"
+        sid: "S-1-5-21-1234567890-1234567890-1234567890-2003"
+      - name: "attacker"
+        domain: "EXTERNAL"
+        sid: "S-1-5-21-9999999999-9999999999-9999999999-1000"
+
+    sourceIPs:
+      - "10.0.1.100"
+      - "10.0.1.101"
+      - "10.0.1.102"
+      - "10.0.2.50"
+      - "10.0.2.51"
+      - "192.168.1.10"
+      - "192.168.1.20"
+      - "172.16.0.100"
+      # Suspicious external IPs for failed logins
+      - "203.0.113.50"
+      - "198.51.100.75"
+
+    processes:
+      - path: "C:\\Windows\\System32\\cmd.exe"
+        name: "cmd.exe"
+      - path: "C:\\Windows\\System32\\powershell.exe"
+        name: "powershell.exe"
+      - path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        name: "powershell.exe"
+      - path: "C:\\Windows\\System32\\notepad.exe"
+        name: "notepad.exe"
+      - path: "C:\\Windows\\explorer.exe"
+        name: "explorer.exe"
+      - path: "C:\\Windows\\System32\\net.exe"
+        name: "net.exe"
+      - path: "C:\\Windows\\System32\\whoami.exe"
+        name: "whoami.exe"
+      - path: "C:\\Windows\\System32\\tasklist.exe"
+        name: "tasklist.exe"
+      - path: "C:\\Program Files\\Microsoft SQL Server\\MSSQL15.MSSQLSERVER\\MSSQL\\Binn\\sqlservr.exe"
+        name: "sqlservr.exe"
+      - path: "C:\\inetpub\\wwwroot\\webapp\\app.exe"
+        name: "app.exe"
+
+# Increase resources for higher volume
+resources:
+  generator:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "300m"
+      memory: "256Mi"
