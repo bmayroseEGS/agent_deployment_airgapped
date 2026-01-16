@@ -11,8 +11,8 @@ data:
     """
     Windows Event Log Synthetic Data Generator
 
-    Generates fake Windows event logs in NDJSON format compatible with
-    Elastic's winlog field mappings and ECS schema.
+    Generates fake Windows event logs and sends them directly to Elasticsearch
+    using the Bulk API, targeting the correct Windows data stream indices.
     """
 
     import json
@@ -22,7 +22,9 @@ data:
     import uuid
     import yaml
     from datetime import datetime, timezone
-    from pathlib import Path
+    from urllib.request import Request, urlopen
+    from urllib.error import URLError, HTTPError
+    from base64 import b64encode
     import logging
     import signal
     import sys
@@ -48,8 +50,80 @@ data:
     signal.signal(signal.SIGINT, signal_handler)
 
 
+    class ElasticsearchClient:
+        """Simple Elasticsearch client using urllib (no external deps)."""
+
+        def __init__(self, host: str, username: str, password: str, verify_ssl: bool = False):
+            self.host = host.rstrip('/')
+            self.auth_header = 'Basic ' + b64encode(f"{username}:{password}".encode()).decode()
+            self.verify_ssl = verify_ssl
+
+        def bulk_index(self, actions: list) -> dict:
+            """Send bulk indexing request to Elasticsearch."""
+            url = f"{self.host}/_bulk"
+
+            # Build NDJSON body
+            body = ""
+            for action in actions:
+                body += json.dumps(action["action"]) + "\n"
+                body += json.dumps(action["doc"]) + "\n"
+
+            headers = {
+                "Content-Type": "application/x-ndjson",
+                "Authorization": self.auth_header
+            }
+
+            request = Request(url, data=body.encode('utf-8'), headers=headers, method='POST')
+
+            try:
+                # Note: In production, you'd want proper SSL verification
+                import ssl
+                context = ssl.create_default_context()
+                if not self.verify_ssl:
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
+
+                with urlopen(request, context=context, timeout=30) as response:
+                    return json.loads(response.read().decode('utf-8'))
+            except HTTPError as e:
+                error_body = e.read().decode('utf-8') if e.fp else str(e)
+                logger.error(f"HTTP Error {e.code}: {error_body}")
+                raise
+            except URLError as e:
+                logger.error(f"URL Error: {e.reason}")
+                raise
+
+        def check_connection(self) -> bool:
+            """Check if Elasticsearch is reachable."""
+            url = f"{self.host}/"
+            headers = {"Authorization": self.auth_header}
+            request = Request(url, headers=headers)
+
+            try:
+                import ssl
+                context = ssl.create_default_context()
+                if not self.verify_ssl:
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
+
+                with urlopen(request, context=context, timeout=10) as response:
+                    data = json.loads(response.read().decode('utf-8'))
+                    logger.info(f"Connected to Elasticsearch: {data.get('cluster_name', 'unknown')}")
+                    return True
+            except Exception as e:
+                logger.error(f"Failed to connect to Elasticsearch: {e}")
+                return False
+
+
     class WindowsEventGenerator:
         """Generates synthetic Windows event log entries."""
+
+        # Channel to data stream mapping
+        CHANNEL_TO_DATASTREAM = {
+            "Security": "logs-windows.security-default",
+            "System": "logs-windows.system-default",
+            "Application": "logs-windows.application-default"
+        }
 
         LOGON_TYPES = {
             2: "Interactive",
@@ -175,6 +249,10 @@ data:
                         "pid": random.randint(4, 65535),
                         "thread": {"id": random.randint(4, 65535)}
                     }
+                },
+                "labels": {
+                    "synthetic": True,
+                    "source": "windows-synthetic-generator"
                 }
             }
 
@@ -641,8 +719,12 @@ data:
 
             return event
 
-        def generate_event(self) -> dict:
-            """Generate a random event based on configured weights."""
+        def generate_event(self) -> tuple:
+            """Generate a random event based on configured weights.
+
+            Returns:
+                tuple: (event_dict, data_stream_name)
+            """
             event_id, channel = random.choice(self.weighted_events)
 
             generators = {
@@ -663,108 +745,127 @@ data:
 
             generator = generators.get((event_id, channel))
             if generator:
-                return generator()
-            return self._base_event(event_id, channel)
+                event = generator()
+            else:
+                event = self._base_event(event_id, channel)
 
-
-    def rotate_log_file(log_path: Path, max_size_mb: int, rotate_count: int):
-        """Rotate log file if it exceeds max size."""
-        if not log_path.exists():
-            return
-
-        size_mb = log_path.stat().st_size / (1024 * 1024)
-        if size_mb < max_size_mb:
-            return
-
-        logger.info(f"Rotating log file (size: {size_mb:.2f} MB)")
-
-        # Remove oldest rotation
-        oldest = log_path.with_suffix(f".{rotate_count}")
-        if oldest.exists():
-            oldest.unlink()
-
-        # Rotate existing files
-        for i in range(rotate_count - 1, 0, -1):
-            src = log_path.with_suffix(f".{i}")
-            dst = log_path.with_suffix(f".{i + 1}")
-            if src.exists():
-                src.rename(dst)
-
-        # Move current to .1
-        log_path.rename(log_path.with_suffix(".1"))
+            data_stream = self.CHANNEL_TO_DATASTREAM.get(channel, "logs-windows.security-default")
+            return event, data_stream
 
 
     def main():
         global running
 
         config_path = os.environ.get('GENERATOR_CONFIG_PATH', '/config/generator-config.yaml')
-        output_path = os.environ.get('LOG_OUTPUT_PATH', '/var/log/windows-synthetic/windows-events.ndjson')
+        es_host = os.environ.get('ELASTICSEARCH_HOST', 'http://elasticsearch-master:9200')
+        es_username = os.environ.get('ELASTICSEARCH_USERNAME', 'elastic')
+        es_password = os.environ.get('ELASTICSEARCH_PASSWORD', 'elastic')
 
-        logger.info("Starting Windows Event Generator")
+        logger.info("Starting Windows Event Generator (Direct ES Mode)")
         logger.info(f"Config path: {config_path}")
-        logger.info(f"Output path: {output_path}")
+        logger.info(f"Elasticsearch: {es_host}")
 
         # Load config for generator settings
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
 
         generator = WindowsEventGenerator(config_path)
+        es_client = ElasticsearchClient(es_host, es_username, es_password)
+
+        # Wait for Elasticsearch to be ready
+        retry_count = 0
+        max_retries = 30
+        while not es_client.check_connection() and retry_count < max_retries:
+            logger.info(f"Waiting for Elasticsearch... ({retry_count + 1}/{max_retries})")
+            time.sleep(10)
+            retry_count += 1
+
+        if retry_count >= max_retries:
+            logger.error("Failed to connect to Elasticsearch after max retries")
+            sys.exit(1)
 
         mode = config.get('mode', 'continuous')
         events_per_minute = config.get('eventsPerMinute', 60)
         batch_size = config.get('batchSize', 100)
         batch_interval = config.get('batchIntervalSeconds', 60)
-        max_size_mb = config.get('logFile', {}).get('maxSizeMB', 100)
-        rotate_count = config.get('logFile', {}).get('rotateCount', 5)
-
-        output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
 
         event_count = 0
-        sleep_interval = 60.0 / events_per_minute  # Convert to seconds between events
+        bulk_batch_size = 10  # Send to ES in batches of 10
+        sleep_interval = 60.0 / events_per_minute
 
         logger.info(f"Mode: {mode}, Events/min: {events_per_minute} (every {sleep_interval:.1f}s)")
 
+        pending_events = []
+
         while running:
             try:
-                # Check for log rotation
-                rotate_log_file(output_file, max_size_mb, rotate_count)
-
                 if mode == 'continuous':
-                    # Generate events at configured rate
-                    event = generator.generate_event()
-                    with open(output_file, 'a') as f:
-                        f.write(json.dumps(event) + '\n')
-                    event_count += 1
+                    # Generate event
+                    event, data_stream = generator.generate_event()
 
-                    if event_count % 10 == 0:
-                        logger.info(f"Generated {event_count} events")
+                    # Add to pending batch
+                    pending_events.append({
+                        "action": {"create": {"_index": data_stream}},
+                        "doc": event
+                    })
+
+                    # Send batch when full
+                    if len(pending_events) >= bulk_batch_size:
+                        try:
+                            result = es_client.bulk_index(pending_events)
+                            if result.get('errors'):
+                                logger.warning(f"Some events failed to index")
+                            event_count += len(pending_events)
+                            logger.info(f"Indexed {len(pending_events)} events (total: {event_count})")
+                        except Exception as e:
+                            logger.error(f"Failed to index batch: {e}")
+                        pending_events = []
 
                     time.sleep(sleep_interval)
 
                 else:  # batch mode
                     logger.info(f"Generating batch of {batch_size} events")
-                    with open(output_file, 'a') as f:
-                        for _ in range(batch_size):
-                            if not running:
-                                break
-                            event = generator.generate_event()
-                            f.write(json.dumps(event) + '\n')
-                            event_count += 1
+                    batch_events = []
 
-                    logger.info(f"Batch complete. Total events: {event_count}. Sleeping for {batch_interval}s")
+                    for _ in range(batch_size):
+                        if not running:
+                            break
+                        event, data_stream = generator.generate_event()
+                        batch_events.append({
+                            "action": {"create": {"_index": data_stream}},
+                            "doc": event
+                        })
 
-                    # Sleep in small increments to allow graceful shutdown
+                    # Send entire batch
+                    if batch_events:
+                        try:
+                            result = es_client.bulk_index(batch_events)
+                            if result.get('errors'):
+                                logger.warning(f"Some events failed to index")
+                            event_count += len(batch_events)
+                            logger.info(f"Batch indexed. Total events: {event_count}")
+                        except Exception as e:
+                            logger.error(f"Failed to index batch: {e}")
+
+                    logger.info(f"Sleeping for {batch_interval}s")
                     for _ in range(batch_interval):
                         if not running:
                             break
                         time.sleep(1)
 
             except Exception as e:
-                logger.error(f"Error generating event: {e}")
-                time.sleep(1)
+                logger.error(f"Error: {e}")
+                time.sleep(5)
 
-        logger.info(f"Generator stopped. Total events generated: {event_count}")
+        # Send any remaining events
+        if pending_events:
+            try:
+                es_client.bulk_index(pending_events)
+                event_count += len(pending_events)
+            except Exception as e:
+                logger.error(f"Failed to index final batch: {e}")
+
+        logger.info(f"Generator stopped. Total events indexed: {event_count}")
 
 
     if __name__ == "__main__":

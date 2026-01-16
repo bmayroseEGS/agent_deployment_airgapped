@@ -1,29 +1,12 @@
-# Windows Synthetic Agent Configuration
-# Generates fake Windows event logs and ships them to Elasticsearch
+# Windows Synthetic Data Generator Configuration
+# Generates fake Windows event logs and ships them directly to Elasticsearch
 
-# Elastic Agent image
-agentImage:
-  registry: localhost:5000
-  repository: elastic-agent/elastic-agent
-  tag: "9.2.3"
-  pullPolicy: IfNotPresent
-
-# Generator sidecar image (python:3.11-slim pre-loaded to local registry)
+# Generator image (python:3.11-slim pre-loaded to local registry)
 generatorImage:
   registry: localhost:5000
   repository: python
   tag: "3.11-slim"
   pullPolicy: IfNotPresent
-
-# ServiceAccount configuration
-serviceAccount:
-  create: true
-  name: windows-synthetic-agent
-  annotations: {}
-
-# RBAC configuration
-rbac:
-  create: true
 
 # Namespace
 namespace: elastic
@@ -36,13 +19,6 @@ elasticsearch:
   ssl:
     enabled: false
     verificationMode: "none"
-
-# Fleet Server connection (optional - set enabled: true to use Fleet)
-fleet:
-  enabled: false
-  url: "http://fleet-server:8220"
-  enrollmentToken: ""
-  insecure: true
 
 # ===========================================
 # Event Generator Configuration
@@ -57,13 +33,6 @@ generator:
   # Batch size (for batch mode - generates this many then pauses)
   batchSize: 100
   batchIntervalSeconds: 60
-
-  # Log file configuration
-  logFile:
-    path: /var/log/windows-synthetic
-    name: windows-events.ndjson
-    maxSizeMB: 100
-    rotateCount: 5
 
   # Event type weights (higher = more frequent)
   eventWeights:
@@ -131,56 +100,21 @@ generator:
         name: "app.exe"
 
 # ===========================================
-# Agent Input Configuration (Standalone mode)
-# ===========================================
-agentConfig:
-  # Data stream settings
-  dataStream:
-    type: logs
-    dataset: windows.synthetic
-    namespace: default
-
-  # Filestream input configuration
-  filestream:
-    id: windows-synthetic-logs
-    paths:
-      - "/var/log/windows-synthetic/*.ndjson"
-    prospector:
-      scanner:
-        check_interval: 1s
-
-# ===========================================
-# Shared Volume Configuration
-# ===========================================
-sharedVolume:
-  sizeLimit: 500Mi
-
-# ===========================================
 # Resource Configuration
 # ===========================================
 resources:
-  agent:
-    requests:
-      cpu: "1m"
-      memory: "100Mi"
-    limits:
-      cpu: "300m"
-      memory: "400Mi"
   generator:
     requests:
       cpu: "1m"
-      memory: "32Mi"
-    limits:
-      cpu: "100m"
       memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
 
 # Pod configuration
 podSecurityContext:
-  runAsUser: 0
-  fsGroup: 0
-
-securityContext:
-  runAsUser: 0
+  runAsUser: 1000
+  fsGroup: 1000
 
 # Node placement
 nodeSelector: {}

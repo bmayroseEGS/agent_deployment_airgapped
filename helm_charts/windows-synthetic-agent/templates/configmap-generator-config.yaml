@@ -17,11 +17,6 @@ data:
     batchSize: {{ .Values.generator.batchSize }}
     batchIntervalSeconds: {{ .Values.generator.batchIntervalSeconds }}
 
-    # Log file settings
-    logFile:
-      maxSizeMB: {{ .Values.generator.logFile.maxSizeMB }}
-      rotateCount: {{ .Values.generator.logFile.rotateCount }}
-
     # Event type weights
     eventWeights:
       {{- toYaml .Values.generator.eventWeights | nindent 6 }}

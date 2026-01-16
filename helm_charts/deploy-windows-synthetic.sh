@@ -13,8 +13,11 @@ CHART_DIR="${SCRIPT_DIR}/windows-synthetic-agent"
 NAMESPACE="elastic"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Windows Synthetic Agent Deployment${NC}"
+echo -e "${BLUE}  Windows Synthetic Data Generator${NC}"
 echo -e "${BLUE}========================================${NC}"
+echo ""
+echo "Generates fake Windows event logs and sends"
+echo "them directly to Elasticsearch via Bulk API."
 echo ""
 
 # Check prerequisites
@@ -55,7 +58,7 @@ echo -e "${YELLOW}Checking Elasticsearch...${NC}"
 ES_POD=$(kubectl get pods -n ${NAMESPACE} -l app=elasticsearch-master -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [ -z "$ES_POD" ]; then
     echo -e "${RED}Warning: Elasticsearch pod not found${NC}"
-    echo -e "${YELLOW}The agent will attempt to connect to http://elasticsearch-master:9200${NC}"
+    echo -e "${YELLOW}The generator will attempt to connect to http://elasticsearch-master:9200${NC}"
 else
     echo -e "${GREEN}✓ Elasticsearch found: ${ES_POD}${NC}"
 fi
@@ -76,27 +79,20 @@ check_image() {
 }
 
 IMAGES_OK=true
-check_image "elastic-agent/elastic-agent" || IMAGES_OK=false
 check_image "python" || IMAGES_OK=false
-check_image "busybox" || IMAGES_OK=false
 
 if [ "$IMAGES_OK" = false ]; then
     echo ""
-    echo -e "${YELLOW}Some images are missing from the local registry.${NC}"
-    echo -e "${YELLOW}Please load them before deploying:${NC}"
+    echo -e "${YELLOW}Python image is missing from the local registry.${NC}"
+    echo -e "${YELLOW}Please load it before deploying:${NC}"
     echo ""
     echo "  # On internet-connected machine:"
     echo "  docker pull python:3.11-slim"
-    echo "  docker tag python:3.11-slim localhost:5000/library/python:3.11-slim"
-    echo "  docker save localhost:5000/library/python:3.11-slim -o python-slim.tar"
-    echo ""
-    echo "  docker pull busybox:1.36"
-    echo "  docker tag busybox:1.36 localhost:5000/library/busybox:1.36"
-    echo "  docker save localhost:5000/library/busybox:1.36 -o busybox.tar"
+    echo "  docker tag python:3.11-slim localhost:5000/python:3.11-slim"
+    echo "  docker save localhost:5000/python:3.11-slim -o python-slim.tar"
     echo ""
     echo "  # On air-gapped machine:"
-    echo "  docker load -i python-slim.tar && docker push localhost:5000/library/python:3.11-slim"
-    echo "  docker load -i busybox.tar && docker push localhost:5000/library/busybox:1.36"
+    echo "  docker load -i python-slim.tar && docker push localhost:5000/python:3.11-slim"
     echo ""
     read -p "Continue anyway? (y/n): " CONTINUE
     if [ "$CONTINUE" != "y" ]; then
@@ -126,21 +122,6 @@ if [ "$MODE_CHOICE" = "2" ]; then
     GEN_MODE="batch"
 else
     GEN_MODE="continuous"
-fi
-
-# Fleet mode
-echo ""
-read -p "Use Fleet-managed mode? (y/n) [n]: " USE_FLEET
-USE_FLEET=${USE_FLEET:-n}
-
-FLEET_ARGS=""
-if [ "$USE_FLEET" = "y" ]; then
-    read -p "Fleet enrollment token: " FLEET_TOKEN
-    if [ -z "$FLEET_TOKEN" ]; then
-        echo -e "${RED}Error: Fleet enrollment token is required for Fleet mode${NC}"
-        exit 1
-    fi
-    FLEET_ARGS="--set fleet.enabled=true --set fleet.enrollmentToken=${FLEET_TOKEN}"
 fi
 
 # Custom values file
@@ -173,7 +154,7 @@ fi
 # Deploy
 echo ""
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Deploying Windows Synthetic Agent${NC}"
+echo -e "${BLUE}  Deploying Windows Synthetic Generator${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -181,7 +162,6 @@ HELM_FULL_CMD="helm ${HELM_CMD} windows-synthetic ${CHART_DIR} \
     -n ${NAMESPACE} \
     --set generator.eventsPerMinute=${EVENTS_PER_MIN} \
     --set generator.mode=${GEN_MODE} \
-    ${FLEET_ARGS} \
     ${VALUES_ARG}"
 
 echo -e "${YELLOW}Running: ${HELM_FULL_CMD}${NC}"
@@ -223,15 +203,17 @@ echo -e "${BLUE}  Next Steps${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo "1. View generator logs:"
-echo "   kubectl logs -n ${NAMESPACE} -l app=windows-synthetic-agent -c windows-event-generator -f"
+echo "   kubectl logs -n ${NAMESPACE} -l app=windows-synthetic-agent -f"
 echo ""
-echo "2. View agent logs:"
-echo "   kubectl logs -n ${NAMESPACE} -l app=windows-synthetic-agent -c elastic-agent -f"
+echo "2. Data streams created:"
+echo "   - logs-windows.security-default"
+echo "   - logs-windows.system-default"
+echo "   - logs-windows.application-default"
 echo ""
 echo "3. View data in Kibana:"
 echo "   - Go to Discover"
-echo "   - Create index pattern: logs-windows.synthetic-*"
-echo "   - Search for winlog.event_id field"
+echo "   - Select 'logs-windows.*' data view"
+echo "   - Filter by labels.synthetic: true to see only synthetic events"
 echo ""
 echo "4. Uninstall:"
 echo "   helm uninstall windows-synthetic -n ${NAMESPACE}"
