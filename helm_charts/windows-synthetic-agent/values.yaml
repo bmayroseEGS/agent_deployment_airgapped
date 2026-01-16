@@ -161,18 +161,18 @@ sharedVolume:
 resources:
   agent:
     requests:
-      cpu: "100m"
-      memory: "200Mi"
+      cpu: "50m"
+      memory: "150Mi"
     limits:
-      cpu: "500m"
-      memory: "500Mi"
+      cpu: "300m"
+      memory: "400Mi"
   generator:
     requests:
-      cpu: "50m"
-      memory: "64Mi"
+      cpu: "10m"
+      memory: "32Mi"
     limits:
-      cpu: "200m"
-      memory: "128Mi"
+      cpu: "100m"
+      memory: "64Mi"
 
 # Pod configuration
 podSecurityContext:
