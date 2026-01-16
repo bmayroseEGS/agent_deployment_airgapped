@@ -77,8 +77,8 @@ check_image() {
 
 IMAGES_OK=true
 check_image "elastic-agent/elastic-agent" || IMAGES_OK=false
-check_image "library/python" || IMAGES_OK=false
-check_image "library/busybox" || IMAGES_OK=false
+check_image "python" || IMAGES_OK=false
+check_image "busybox" || IMAGES_OK=false
 
 if [ "$IMAGES_OK" = false ]; then
     echo ""

@@ -11,7 +11,7 @@ agentImage:
 # Generator sidecar image (python:3.11-slim pre-loaded to local registry)
 generatorImage:
   registry: localhost:5000
-  repository: library/python
+  repository: python
   tag: "3.11-slim"
   pullPolicy: IfNotPresent
 
